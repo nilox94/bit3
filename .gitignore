@@ -1,0 +1,9 @@
+# Rust build artifacts
+bitc/target/
+
+# Lean 4 build artifacts
+bitlib/.lake/
+
+# OS / editor artifacts
+.DS_Store
+*.swp

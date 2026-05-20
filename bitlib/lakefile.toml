@@ -1,0 +1,13 @@
+name = "bitlib"
+version = "0.1.0"
+defaultTargets = ["Bitlib"]
+testDriver = "test"
+
+[[lean_lib]]
+name = "Bitlib"
+
+[[lean_exe]]
+name = "test"
+srcDir = "test"
+root = "Main"
+isTest = true
