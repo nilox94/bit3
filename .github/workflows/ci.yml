@@ -1,0 +1,112 @@
+name: CI
+
+on:
+  push:
+    branches: ["master"]
+  pull_request:
+    branches: ["master"]
+
+jobs:
+  bitc-build:
+    name: bitc — build & test
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install LLVM 18
+        run: |
+          wget -qO- https://apt.llvm.org/llvm.sh | sudo bash -s -- 18
+          sudo apt-get install -y llvm-18 clang-18
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Cargo registry
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            bitc/target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('bitc/Cargo.lock') }}
+          restore-keys: ${{ runner.os }}-cargo-
+
+      - name: cargo build
+        working-directory: bitc
+        run: cargo build
+
+      - name: cargo test
+        working-directory: bitc
+        run: cargo test
+
+  bitlib-build:
+    name: bitlib — build & test
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install elan (Lean 4 version manager)
+        run: |
+          curl https://raw.githubusercontent.com/leanprover/elan/master/elan-init.sh -sSf | sh -s -- -y
+          echo "$HOME/.elan/bin" >> "$GITHUB_PATH"
+
+      - name: Cache Lake build
+        uses: actions/cache@v4
+        with:
+          path: bitlib/.lake/build
+          key: ${{ runner.os }}-lake-${{ hashFiles('bitlib/lakefile.toml', 'bitlib/lean-toolchain') }}
+          restore-keys: ${{ runner.os }}-lake-
+
+      - name: lake build
+        working-directory: bitlib
+        run: lake build
+
+      - name: lake test
+        working-directory: bitlib
+        run: lake test
+
+  integration:
+    name: integration — bitc output compiles in Lean
+    runs-on: ubuntu-22.04
+    needs: [bitc-build, bitlib-build]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install elan (Lean 4 version manager)
+        run: |
+          curl https://raw.githubusercontent.com/leanprover/elan/master/elan-init.sh -sSf | sh -s -- -y
+          echo "$HOME/.elan/bin" >> "$GITHUB_PATH"
+
+      - name: Cache Cargo registry
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            bitc/target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('bitc/Cargo.lock') }}
+          restore-keys: ${{ runner.os }}-cargo-
+
+      - name: Cache Lake build
+        uses: actions/cache@v4
+        with:
+          path: bitlib/.lake/build
+          key: ${{ runner.os }}-lake-${{ hashFiles('bitlib/lakefile.toml', 'bitlib/lean-toolchain') }}
+          restore-keys: ${{ runner.os }}-lake-
+
+      - name: Build bitc
+        working-directory: bitc
+        run: cargo build
+
+      - name: Run bitc (smoke test — prints hello)
+        working-directory: bitc
+        run: |
+          output=$(./target/debug/bitc)
+          [ "$output" = "hello" ] || (echo "Unexpected output: $output" && exit 1)
+
+      - name: Build bitlib (integration gate)
+        working-directory: bitlib
+        run: lake build
