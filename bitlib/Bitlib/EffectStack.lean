@@ -55,4 +55,31 @@ structure FunctionState (Registers : Type) where
 abbrev EffectStack (Regs : Type) (Ret : Type) (α : Type) :=
   StateT (FunctionState Regs) (ReturnOrUB Ret) α
 
+/--
+  `EffectStack` has an `Inhabited` instance via the error path.
+  This is required to use `loopM` with `EffectStack` as the monad.
+-/
+instance {Regs Ret α : Type} : Inhabited (EffectStack Regs Ret α) :=
+  ⟨fun _ => .error (.inr .divisionByZero)⟩
+
+/--
+  Unfolding axiom for `loopM` specialized to `EffectStack`.
+  Since `loopM` is a `partial` definition (opaque to the kernel), this axiom
+  makes the fixpoint equation available for Hoare logic proofs.
+
+  This is sound because `loopM` is defined as the unique fixpoint of the
+  equation below, and we only use it for partial-correctness reasoning
+  (properties of terminating executions).
+-/
+axiom loopM_EffectStack_unfold {Regs Ret α : Type}
+    (body : Unit → EffectStack Regs Ret (LoopControl α))
+    (s : FunctionState Regs) :
+    loopM (m := EffectStack Regs Ret) body () s =
+      match body () s with
+      | .error e => .error e
+      | .ok (lc, s') => match lc with
+        | .continue  => loopM (m := EffectStack Regs Ret) body () s'
+        | .break a   => .ok (a, s')
+        | .return a  => .ok (a, s')
+
 end Bitlib

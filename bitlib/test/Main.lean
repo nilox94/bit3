@@ -1,6 +1,7 @@
 -- bitlib test suite
 import Bitlib.LLVMType
 import Bitlib.EffectStack
+import Bitlib.Hoare
 
 open Bitlib
 
