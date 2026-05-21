@@ -1,5 +1,6 @@
 -- bitlib test suite
 import Bitlib.LLVMType
+import Bitlib.EffectStack
 
 open Bitlib
 
@@ -73,6 +74,47 @@ example : LLVMRepr.Carrier (t := LLVMType.function [] LLVMType.void) = Unit := r
 -- Round-trip: ofBool . toBool is identity on {0, 1}
 #guard ofBool (Bitlib.toBool 0) == 0
 #guard ofBool (Bitlib.toBool 1) == 1
+
+-- ---------------------------------------------------------------------------
+-- EffectStack: LoopControl
+-- ---------------------------------------------------------------------------
+
+#check Bitlib.LoopControl.continue (α := Int)
+#check Bitlib.LoopControl.break (α := Int)
+#check Bitlib.LoopControl.return (α := Int)
+
+-- loopM terminates when returning break or return
+#eval Id.run do
+  let res ← Bitlib.loopM (m := Id) (fun _ => pure (Bitlib.LoopControl.break 42)) ()
+  pure (res == 42)
+
+-- phi combinator test
+#eval Bitlib.phi 1 2 true == 1
+#eval Bitlib.phi 1 2 false == 2
+
+-- stateLoopM test
+#eval Id.run do
+  let res ← Bitlib.stateLoopM (m := Id) (fun _ => pure (Bitlib.LoopControl.break 42)) ()
+  pure (res == 42)
+
+-- EffectStack type test
+def testEffectStack : Bitlib.EffectStack Unit Int Unit := do
+  let s ← get
+  set { s with regs := () }
+  pure ()
+
+-- loopM counting loop: counts from 0 to 4 and breaks at 5
+-- Uses StateT to thread the counter through the loop
+def countingLoop : StateT Nat Id Int :=
+  Bitlib.loopM (m := StateT Nat Id) (fun _ => do
+    let n ← get
+    if n < 5 then
+      set (n + 1)
+      pure Bitlib.LoopControl.continue
+    else
+      pure (Bitlib.LoopControl.break n)) ()
+
+#guard (countingLoop.run 0).1 == 5
 
 -- ---------------------------------------------------------------------------
 -- Storable stub -- just check it compiles and can be mentioned
