@@ -3,8 +3,20 @@ version = "0.1.0"
 defaultTargets = ["Bitlib"]
 testDriver = "test"
 
+[[require]]
+name = "aesop"
+git = "https://github.com/leanprover-community/aesop"
+rev = "v4.29.0"
+
 [[lean_lib]]
 name = "Bitlib"
+
+# HoareTest contains compile-time proof examples (the factorial proof and
+# the Hoare-logic acceptance criteria from issue #5). It is built as part
+# of `lake test` so that proof regressions break CI.
+[[lean_lib]]
+name = "HoareTest"
+srcDir = "test"
 
 [[lean_exe]]
 name = "test"

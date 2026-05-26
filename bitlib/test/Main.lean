@@ -2,6 +2,8 @@
 import Bitlib.LLVMType
 import Bitlib.EffectStack
 import Bitlib.Hoare
+-- Elaborates the Hoare-logic proof examples (issue #5 acceptance criteria).
+import HoareTest
 
 open Bitlib
 
@@ -63,7 +65,6 @@ example : LLVMRepr.Carrier (t := LLVMType.function [] LLVMType.void) = Unit := r
 -- toBool / ofBool coercion
 -- ---------------------------------------------------------------------------
 
--- Use fully-qualified name to avoid ambiguity with Lean's built-in ToBool
 #guard Bitlib.toBool 0  == false
 #guard Bitlib.toBool 1  == true
 #guard Bitlib.toBool (-1) == true
@@ -72,7 +73,6 @@ example : LLVMRepr.Carrier (t := LLVMType.function [] LLVMType.void) = Unit := r
 #guard ofBool false == 0
 #guard ofBool true  == 1
 
--- Round-trip: ofBool . toBool is identity on {0, 1}
 #guard ofBool (Bitlib.toBool 0) == 0
 #guard ofBool (Bitlib.toBool 1) == 1
 
@@ -84,19 +84,43 @@ example : LLVMRepr.Carrier (t := LLVMType.function [] LLVMType.void) = Unit := r
 #check Bitlib.LoopControl.break (α := Int)
 #check Bitlib.LoopControl.return (α := Int)
 
--- loopM terminates when returning break or return
-#eval Id.run do
-  let res ← Bitlib.loopM (m := Id) (fun _ => pure (Bitlib.LoopControl.break 42)) ()
-  pure (res == 42)
-
 -- phi combinator test
 #eval Bitlib.phi 1 2 true == 1
 #eval Bitlib.phi 1 2 false == 2
 
--- stateLoopM test
-#eval Id.run do
-  let res ← Bitlib.stateLoopM (m := Id) (fun _ => pure (Bitlib.LoopControl.break 42)) ()
-  pure (res == 42)
+-- ---------------------------------------------------------------------------
+-- EffectStack: loopM smoke test (fuel-indexed, total)
+-- ---------------------------------------------------------------------------
+
+structure SmokeCounter where
+  n : Int
+
+/-- A loop that counts from 0 to 5 inside the `EffectStack`. -/
+def countingLoop (fuel : Nat) : EffectStack SmokeCounter Int Int :=
+  loopM fuel (fun _ => do
+    let s ← get
+    if s.regs.n < 5 then do
+      modify (fun s => { s with regs := { n := s.regs.n + 1 } })
+      pure LoopControl.continue
+    else
+      pure (LoopControl.break s.regs.n)) ()
+
+-- With enough fuel, the loop finishes with `n = 5`.
+#guard
+  (match (countingLoop 10).run { regs := { n := 0 }, memory := [] } with
+   | .ok (v, _) => v == 5
+   | .error _   => false)
+
+-- With insufficient fuel, the loop hits `.timeout`.
+#guard
+  (match (countingLoop 2).run { regs := { n := 0 }, memory := [] } with
+   | .ok _              => false
+   | .error (.inr .timeout) => true
+   | .error _           => false)
+
+-- `stateLoopM` is definitionally equal to `loopM`.
+example (fuel : Nat) (body : Unit → EffectStack SmokeCounter Int (LoopControl Int)) :
+    stateLoopM fuel body = loopM fuel body := rfl
 
 -- EffectStack type test
 def testEffectStack : Bitlib.EffectStack Unit Int Unit := do
@@ -104,24 +128,10 @@ def testEffectStack : Bitlib.EffectStack Unit Int Unit := do
   set { s with regs := () }
   pure ()
 
--- loopM counting loop: counts from 0 to 4 and breaks at 5
--- Uses StateT to thread the counter through the loop
-def countingLoop : StateT Nat Id Int :=
-  Bitlib.loopM (m := StateT Nat Id) (fun _ => do
-    let n ← get
-    if n < 5 then
-      set (n + 1)
-      pure Bitlib.LoopControl.continue
-    else
-      pure (Bitlib.LoopControl.break n)) ()
-
-#guard (countingLoop.run 0).1 == 5
-
 -- ---------------------------------------------------------------------------
--- Storable stub -- just check it compiles and can be mentioned
+-- Storable stub
 -- ---------------------------------------------------------------------------
 
--- We can write an instance for a concrete type without providing any fields.
 instance : Storable (LLVMType.iN 32) where
 
 def main : IO Unit := do

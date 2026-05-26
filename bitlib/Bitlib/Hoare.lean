@@ -1,33 +1,44 @@
 import Bitlib.EffectStack
-set_option linter.unusedSimpArgs false
+
 namespace Bitlib
 
 /-!
 # Hoare Logic for the Effect Stack
 
 This module defines the `HoareM` proposition and all structural lemmas for
-reasoning about `EffectStack` computations. The `hoare` tactic provides
-automation that applies structural lemmas, leaving the user with only
-Loop Invariant and arithmetic obligations.
-
-ADR-0002: Weakest Precondition computation is strictly internal to the
-`hoare` tactic and is never exposed to the user.
+reasoning about `EffectStack` computations. Structural rules are bundled into
+a dedicated `aesop` rule set so that user proofs reduce to **Loop Invariant**
+and arithmetic obligations.
 
 ## Trusted Computing Base
 
-This module adds two axioms to the TCB, both concerning `loopM` which is a
-`partial` (potentially non-terminating) function:
+**Zero axioms.** `loopM` is total (fuel-indexed), so termination needs no
+axiomatic justification: fuel exhaustion is observable as `UBKind.timeout`
+inside the `EffectStack`, and `HoareM` is vacuously true on the error branch.
 
-1. `loopM_EffectStack_unfold` (in `EffectStack.lean`): the fixpoint equation
-   for `loopM`. Sound because `loopM` is defined as exactly that fixpoint.
+## Workflow
 
-2. `loopM_terminates_on_invariant`: if a loop body preserves an invariant `I`
-   on `continue`, then any execution starting from a state satisfying `I` is
-   accessible (well-founded). This is the standard partial-correctness
-   assumption: we only reason about terminating executions.
+For straight-line code:
 
-These axioms are the explicit, named trusted base for all loop proofs.
+```lean
+aesop (rule_sets := [BitcHoare])
+```
+
+For loops:
+
+```lean
+apply loopM_hoare (I := <invariant>)
+intro u s hs
+aesop (rule_sets := [BitcHoare])
+```
+
+`loopM_hoare` is intentionally **not** tagged with `aesop` because the
+invariant `I` cannot be inferred.
 -/
+
+-- ---------------------------------------------------------------------------
+-- HoareM
+-- ---------------------------------------------------------------------------
 
 section HoareM
 
@@ -35,11 +46,10 @@ variable {Regs Ret α β : Type}
 
 /--
 `HoareM P c Q` is a Hoare Triple for an `EffectStack` computation.
-It asserts that if the initial state satisfies precondition `P`, then
-running `c` either:
+If the initial state satisfies precondition `P`, then running `c` either:
 - returns normally and the resulting state satisfies postcondition `Q`, or
-- throws a `ReturnOrUB` exception (early return or UB), in which case
-  `Q` need not hold.
+- throws a `ReturnOrUB` exception (early return, UB, or `timeout`), in which
+  case `Q` need not hold.
 
 This matches the partial-correctness semantics appropriate for a language
 with explicit early returns and undefined behavior.
@@ -52,40 +62,22 @@ def HoareM (P : FunctionState Regs → Prop)
     | .ok (a, s') => Q a s'
     | .error _    => True
 
+/-- Precondition weakening (rule of consequence on the left).
+
+    Useful when chaining `seq_hoare` (which yields a `(· = s')` precondition)
+    into a `loopM_hoare` (which expects an invariant `I`): the user shows that
+    the pinned state satisfies `I`, then invokes the loop lemma. -/
+theorem HoareM.conseq_pre {Regs Ret α : Type}
+    {P P' : FunctionState Regs → Prop}
+    {c : EffectStack Regs Ret α}
+    {Q : α → FunctionState Regs → Prop}
+    (hP : ∀ s, P s → P' s) (h : HoareM P' c Q) : HoareM P c Q :=
+  fun s hs => h s (hP s hs)
+
 end HoareM
 
 -- ---------------------------------------------------------------------------
--- Termination axiom for loop proofs
--- ---------------------------------------------------------------------------
-
-/--
-`loopM_terminates_on_invariant`: the accessibility axiom for loop proofs.
-
-If a loop body preserves invariant `I` on `continue` (and terminates on
-`break`/`return`), then the "continue" relation on states satisfying `I`
-is well-founded — i.e., any execution starting from a state satisfying `I`
-eventually terminates.
-
-This is the standard partial-correctness assumption: `loopM_hoare` and
-`stateLoopM_hoare` only prove properties of *terminating* executions.
-Non-terminating loops trivially satisfy any postcondition under
-partial-correctness semantics (the `error` branch of `HoareM` is vacuously
-`True`).
-
-This axiom is in the TCB alongside `loopM_EffectStack_unfold`.
--/
-axiom loopM_terminates_on_invariant {Regs Ret α : Type}
-    (I : FunctionState Regs → Prop)
-    (body : Unit → EffectStack Regs Ret (LoopControl α))
-    (hbody : ∀ s, I s →
-      match body () s with
-      | .ok (.continue, s') => I s'
-      | _ => True)
-    (s : FunctionState Regs) (hs : I s) :
-    Acc (fun s' s => body () s = .ok (.continue, s')) s
-
--- ---------------------------------------------------------------------------
--- Structural lemmas
+-- Structural lemmas (tagged for Aesop)
 -- ---------------------------------------------------------------------------
 
 section StructuralLemmas
@@ -94,9 +86,11 @@ variable {Regs Ret α β : Type}
 
 /-- `skip_hoare`: `pure a` satisfies any postcondition that holds for `a`
     in the current state. -/
+@[aesop safe apply (rule_sets := [BitcHoare])]
 theorem skip_hoare {P : FunctionState Regs → Prop}
     {Q : α → FunctionState Regs → Prop}
-    (a : α) (h : ∀ s, P s → Q a s) :
+    {a : α}
+    (h : ∀ s, P s → Q a s) :
     HoareM P (pure a : EffectStack Regs Ret α) Q := by
   intro s hs
   simp [pure, StateT.pure, Except.pure]
@@ -104,37 +98,47 @@ theorem skip_hoare {P : FunctionState Regs → Prop}
 
 /-- `modify_hoare`: `modify f` satisfies `Q ()` whenever `P` implies
     `Q () (f s)`. -/
+@[aesop safe apply (rule_sets := [BitcHoare])]
 theorem modify_hoare {P : FunctionState Regs → Prop}
     {Q : Unit → FunctionState Regs → Prop}
-    (f : FunctionState Regs → FunctionState Regs)
+    {f : FunctionState Regs → FunctionState Regs}
     (h : ∀ s, P s → Q () (f s)) :
     HoareM P (modify f : EffectStack Regs Ret Unit) Q := by
   intro s hs
   simp [modify, modifyGet, MonadStateOf.modifyGet, StateT.modifyGet, pure, Except.pure]
   exact h s hs
 
-/-- `seq_hoare`: sequential composition (bind). -/
+/-- `seq_hoare`: WLP-style sequential composition.
+
+    The second-leg hypothesis is parameterised by the exact post-state `s'`
+    produced by the first leg — no existential intermediate predicate `R` to
+    invent. This is the shape `aesop` can apply mechanically. -/
+@[aesop safe apply (rule_sets := [BitcHoare])]
 theorem seq_hoare {P : FunctionState Regs → Prop}
-    {R : α → FunctionState Regs → Prop}
     {Q : β → FunctionState Regs → Prop}
-    {c : EffectStack Regs Ret α} {k : α → EffectStack Regs Ret β}
-    (hc : HoareM P c R)
-    (hk : ∀ a, HoareM (R a) (k a) Q) :
+    {c : EffectStack Regs Ret α}
+    {k : α → EffectStack Regs Ret β}
+    (h : HoareM P c (fun a s' => HoareM (· = s') (k a) Q)) :
     HoareM P (c >>= k) Q := by
   intro s hs
+  have h1 := h s hs
   show match (c >>= k) s with | .ok (b, s'') => Q b s'' | .error _ => True
   simp only [bind, StateT.bind, Except.bind]
-  have hcs := hc s hs
   rcases hcs_eq : c s with ⟨e⟩ | ⟨a, s'⟩
   · simp
-  · simp only [hcs_eq] at hcs
-    simp only [hcs_eq]
-    exact hk a s' hcs
+  · simp only [hcs_eq] at h1
+    have h2 := h1 s' rfl
+    rcases hk_eq : k a s' with ⟨e⟩ | ⟨b, s''⟩
+    · simp [hk_eq]
+    · simp only [hk_eq] at h2
+      simp only [hk_eq]
+      exact h2
 
 /-- `ifM_hoare`: conditional branching. -/
+@[aesop safe apply (rule_sets := [BitcHoare])]
 theorem ifM_hoare {P : FunctionState Regs → Prop}
     {Q : α → FunctionState Regs → Prop}
-    (cond : Bool)
+    {cond : Bool}
     {ct cf : EffectStack Regs Ret α}
     (ht : cond = true  → HoareM P ct Q)
     (hf : cond = false → HoareM P cf Q) :
@@ -143,137 +147,26 @@ theorem ifM_hoare {P : FunctionState Regs → Prop}
   · exact hf rfl
   · exact ht rfl
 
-/-- Helper: extract the invariant-preservation property from `hbody`. -/
-private theorem loopM_body_preserves_inv {Regs Ret α : Type}
-    {I : FunctionState Regs → Prop}
-    {Q : α → FunctionState Regs → Prop}
-    {body : Unit → EffectStack Regs Ret (LoopControl α)}
-    (hbody : ∀ u, HoareM I (body u)
-               (fun lc s' =>
-                 match lc with
-                 | .continue  => I s'
-                 | .break a   => Q a s'
-                 | .return a  => Q a s'))
-    (s : FunctionState Regs) (hs : I s) :
-    match body () s with
-    | .ok (.continue, s') => I s'
-    | _ => True := by
-  have hb := hbody () s hs
-  rcases h : body () s with ⟨_⟩ | ⟨lc, s'⟩
-  · trivial
-  · simp only [h] at hb
-    rcases lc with _ | a | a
-    · simp only at hb; simp only [h]; exact hb
-    · trivial
-    · trivial
-
-/-- `loopM_hoare`: structured loop with a Loop Invariant.
-    The user supplies `I : FunctionState Regs → Prop` that holds before
-    every iteration. The body must preserve `I` on `continue` and
-    establish `Q` on `break`/`return`.
-
-    Termination is justified by `loopM_terminates_on_invariant` (a named
-    axiom in the TCB). The proof is by well-founded recursion on the
-    accessibility witness for the "continue" relation. -/
-theorem loopM_hoare
-    {I : FunctionState Regs → Prop}
-    {Q : α → FunctionState Regs → Prop}
-    {body : Unit → EffectStack Regs Ret (LoopControl α)}
-    (hbody : ∀ u, HoareM I (body u)
-               (fun lc s' =>
-                 match lc with
-                 | .continue  => I s'
-                 | .break a   => Q a s'
-                 | .return a  => Q a s')) :
-    ∀ u, HoareM I (loopM (m := EffectStack Regs Ret) body u) Q := by
-  intro u s hs
-  -- Obtain the accessibility witness from the named axiom.
-  have hacc := loopM_terminates_on_invariant I body
-    (loopM_body_preserves_inv hbody) s hs
-  -- Prove by well-founded induction on the accessibility witness.
-  -- The key: `hacc` is `Acc R s` where `R s' s ↔ body () s = .ok (.continue, s')`.
-  -- We induct on `hacc`, which gives us an IH for any `s'` reachable via `continue`.
-  induction hacc with
-  | intro s' _ ih =>
-    rw [loopM_EffectStack_unfold]
-    have hb := hbody u s' hs
-    rcases h : body u s' with ⟨_⟩ | ⟨lc, s''⟩
-    · trivial
-    · simp only [h] at hb; simp only [h]
-      rcases lc with _ | a | a
-      · -- continue: `hb : I s''`, recurse via `ih`
-        simp only at hb
-        -- `u = ()` so `body u s' = body () s'`
-        have hstep : body () s' = .ok (.continue, s'') := by
-          cases u; exact h
-        exact ih s'' hstep hb
-      · exact hb
-      · exact hb
-
-/-- `stateLoopM_hoare`: state-variable loop with a state-indexed invariant.
-    `I : Nat → FunctionState Regs → Prop` where the `Nat` indexes the
-    CFG entry point (for State-Variable Encoding of Irreducible Loops).
-
-    Termination is justified by `loopM_terminates_on_invariant` via the
-    existential state index. -/
-theorem stateLoopM_hoare
-    {I : Nat → FunctionState Regs → Prop}
-    {Q : α → FunctionState Regs → Prop}
-    {body : Unit → EffectStack Regs Ret (LoopControl α)}
-    (hbody : ∀ u n, HoareM (I n) (body u)
-               (fun lc s' =>
-                 match lc with
-                 | .continue  => ∃ n', I n' s'
-                 | .break a   => Q a s'
-                 | .return a  => Q a s'))
-    (n : Nat) :
-    ∀ u, HoareM (I n) (stateLoopM (m := EffectStack Regs Ret) body u) Q := by
-  rw [stateLoopM_eq_loopM]
-  -- Lift to the existential invariant J s := ∃ k, I k s.
-  -- First, show the body preserves J on continue.
-  have hJ_pres : ∀ s, (∃ k, I k s) →
-      match body () s with
-      | .ok (.continue, s') => ∃ k, I k s'
-      | _ => True := by
-    intro s ⟨k, hk⟩
-    have hb := hbody () k s hk
-    rcases h : body () s with ⟨_⟩ | ⟨lc, s'⟩
-    · trivial
-    · simp only [h] at hb
-      rcases lc with _ | a | a
-      · simp only at hb; simp only [h]; exact hb
-      · trivial
-      · trivial
-  -- Helper: for any state with existential invariant, the loop satisfies Q.
-  -- Proved by well-founded induction on Acc, with the existential IH.
-  suffices hJ_loop : ∀ s, (∃ k, I k s) →
-      ∀ u, match loopM (m := EffectStack Regs Ret) body u s with
-           | .ok (a, s') => Q a s'
-           | .error _ => True from
-    fun u s hs => hJ_loop s ⟨n, hs⟩ u
-  intro s hex
-  have hacc := loopM_terminates_on_invariant (fun s => ∃ k, I k s) body hJ_pres s hex
-  induction hacc with
-  | intro s' _ ih =>
-    -- After induction: s' is the current state, hex : ∃ k, I k s' is in context.
-    -- The goal is: ∀ u, match loopM body u s' with ...
-    intro u
-    rw [loopM_EffectStack_unfold]
-    obtain ⟨k', hk'⟩ := hex
-    have hb := hbody u k' s' hk'
-    rcases h : body u s' with ⟨_⟩ | ⟨lc, s''⟩
-    · trivial
-    · simp only [h] at hb; simp only [h]
-      rcases lc with _ | a | a
-      · simp only at hb
-        have hstep : body () s' = .ok (.continue, s'') := by cases u; exact h
-        exact ih s'' hstep hb u
-      · exact hb
-      · exact hb
-
 -- ---------------------------------------------------------------------------
--- Memory helpers
+-- Memory helpers (tagged for Aesop)
 -- ---------------------------------------------------------------------------
+
+/-- `store_hoare`: write an integer value to the residual memory map.
+
+    Just a specialisation of `modify_hoare`, kept as a named lemma so that
+    aesop can recognise the canonical store shape. -/
+@[aesop safe apply (rule_sets := [BitcHoare])]
+theorem store_hoare
+    {P : FunctionState Regs → Prop}
+    {Q : Unit → FunctionState Regs → Prop}
+    {addr : Nat} {val : Int}
+    (h : ∀ s, P s →
+         Q () { s with memory := (addr, val) :: s.memory.filter (fun p => p.1 ≠ addr) }) :
+    HoareM P
+      (modify (fun s => { s with memory := (addr, val) :: s.memory.filter (fun p => p.1 ≠ addr) })
+        : EffectStack Regs Ret Unit)
+      Q :=
+  modify_hoare h
 
 /-- Helper: the `load` do-block reduces to a simple match on `find?`. -/
 private theorem load_do_eq {Regs Ret : Type} (addr : Nat) :
@@ -294,26 +187,12 @@ private theorem load_do_eq {Regs Ret : Type} (addr : Nat) :
   · rename_i fst v heq; simp [heq, StateT.pure]; rfl
   · rename_i heq; simp [heq, StateT.pure]; rfl
 
-/-- `store_hoare`: write an integer value to the residual memory map. -/
-theorem store_hoare
-    {P : FunctionState Regs → Prop}
-    {Q : Unit → FunctionState Regs → Prop}
-    (addr : Nat) (val : Int)
-    (h : ∀ s, P s →
-         Q () { s with memory := (addr, val) :: s.memory.filter (fun p => p.1 ≠ addr) }) :
-    HoareM P
-      (modify (fun s => { s with memory := (addr, val) :: s.memory.filter (fun p => p.1 ≠ addr) })
-        : EffectStack Regs Ret Unit)
-      Q :=
-  modify_hoare _ h
-
-/-- `load_hoare`: read an integer value from the residual memory map.
-    The postcondition must handle both the `some` case (address found)
-    and the `none` case (address not found, returns 0). -/
+/-- `load_hoare`: read an integer value from the residual memory map. -/
+@[aesop safe apply (rule_sets := [BitcHoare])]
 theorem load_hoare
     {P : FunctionState Regs → Prop}
     {Q : Int → FunctionState Regs → Prop}
-    (addr : Nat)
+    {addr : Nat}
     (h : ∀ s, P s →
          match s.memory.find? (fun p => p.1 == addr) with
          | some (_, v) => Q v s
@@ -336,33 +215,89 @@ theorem load_hoare
 end StructuralLemmas
 
 -- ---------------------------------------------------------------------------
--- `hoare` tactic
+-- Loop lemma (intentionally NOT tagged with aesop)
 -- ---------------------------------------------------------------------------
 
-/--
-The `hoare` tactic automatically applies structural Hoare lemmas to
-decompose a `HoareM` goal. It applies:
-- `seq_hoare` for `>>=`
-- `skip_hoare` for `pure`
-- `modify_hoare` for `modify`
-- `ifM_hoare` for `if`
-- `loopM_hoare` for `loopM`
-- `stateLoopM_hoare` for `stateLoopM`
-- `store_hoare` for store patterns
-- `load_hoare` for load patterns
+section LoopLemma
 
-After `hoare`, only Loop Invariant obligations and arithmetic goals remain.
-The user should close them with `intro s hs`, `omega`, `simp_all`, etc.
+variable {Regs Ret α : Type}
+
+/-- `loopM_hoare`: structured loop with a Loop Invariant.
+
+    The user supplies `I : FunctionState Regs → Prop` that holds before every
+    iteration. The body must preserve `I` on `continue` and establish `Q` on
+    `break`/`return`. Termination is by structural recursion on `fuel`; fuel
+    exhaustion produces `UBKind.timeout`, on which `HoareM` is vacuously true.
+
+    Not tagged with `aesop` — the invariant cannot be inferred. The user must
+    `apply loopM_hoare (I := ...)` before calling `aesop (rule_sets := [BitcHoare])`.
 -/
-macro "hoare" : tactic =>
-  `(tactic| repeat first
-    | apply seq_hoare
-    | apply skip_hoare
-    | apply modify_hoare
-    | apply store_hoare
-    | apply load_hoare
-    | (apply ifM_hoare; intro _)
-    | (apply loopM_hoare; intro _)
-    | (apply stateLoopM_hoare; intro _; intro _))
+theorem loopM_hoare
+    {I : FunctionState Regs → Prop}
+    {Q : α → FunctionState Regs → Prop}
+    {body : Unit → EffectStack Regs Ret (LoopControl α)}
+    (hbody : ∀ u, HoareM I (body u) (LoopControl.post I Q)) :
+    ∀ fuel u, HoareM I (loopM fuel body u) Q := by
+  intro fuel
+  induction fuel with
+  | zero =>
+    intro u s hs
+    simp [loopM]
+  | succ n ih =>
+    intro u s hs
+    cases u
+    rw [loopM_succ]
+    simp only [bind, StateT.bind, Except.bind]
+    have hb := hbody () s hs
+    cases h : body () s with
+    | error e => simp
+    | ok val =>
+      rcases val with ⟨lc, s'⟩
+      simp only [h] at hb
+      rcases lc with _ | a | a
+      all_goals dsimp only
+      all_goals simp only [LoopControl.post] at hb
+      · -- continue
+        exact ih () s' hb
+      · -- break
+        simp only [pure, StateT.pure, Except.pure]
+        exact hb
+      · -- return
+        simp only [pure, StateT.pure, Except.pure]
+        exact hb
+
+/-- `stateLoopM_hoare`: state-variable loop with a state-indexed invariant.
+    `I : Nat → FunctionState Regs → Prop` where the `Nat` indexes the CFG
+    entry point (for State-Variable Encoding of Irreducible Loops).
+
+    Reduced to `loopM_hoare` by lifting to the existential invariant
+    `J s := ∃ k, I k s`. Not tagged with `aesop`. -/
+theorem stateLoopM_hoare
+    {I : Nat → FunctionState Regs → Prop}
+    {Q : α → FunctionState Regs → Prop}
+    {body : Unit → EffectStack Regs Ret (LoopControl α)}
+    (hbody : ∀ u n, HoareM (I n) (body u)
+               (LoopControl.post (fun s' => ∃ n', I n' s') Q))
+    (n : Nat) :
+    ∀ fuel u, HoareM (I n) (stateLoopM fuel body u) Q := by
+  intro fuel u
+  rw [stateLoopM_eq_loopM]
+  -- Lift to the existential invariant J s := ∃ k, I k s.
+  have hJ : ∀ u, HoareM (fun s => ∃ k, I k s) (body u)
+                  (LoopControl.post (fun s' => ∃ k, I k s') Q) := by
+    intro u s ⟨k, hk⟩
+    have hb := hbody u k s hk
+    rcases h : body u s with ⟨e⟩ | ⟨lc, s'⟩
+    · trivial
+    · simp only [h] at hb
+      rcases lc with _ | a | a
+      · simp only [LoopControl.post] at hb ⊢; exact hb
+      · exact hb
+      · exact hb
+  have hloop := loopM_hoare (I := fun s => ∃ k, I k s) (Q := Q) hJ fuel u
+  intro s hs
+  exact hloop s ⟨n, hs⟩
+
+end LoopLemma
 
 end Bitlib

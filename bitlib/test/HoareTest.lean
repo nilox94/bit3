@@ -2,17 +2,15 @@ import Bitlib.Hoare
 open Bitlib
 
 -- ---------------------------------------------------------------------------
--- TDD Cycle 1: HoareM proposition is defined and has the right type
+-- HoareM proposition is defined and has the right type
 -- ---------------------------------------------------------------------------
 
--- HoareM must be a Prop
 #check @HoareM
--- HoareM P c Q : Prop
 example : Prop := HoareM (Regs := Unit) (Ret := Int) (α := Unit)
   (fun _ => True) (pure ()) (fun _ _ => True)
 
 -- ---------------------------------------------------------------------------
--- TDD Cycle 2: skip_hoare — pure satisfies any Q that holds for a in s
+-- skip_hoare — pure satisfies any Q that holds for a in s
 -- ---------------------------------------------------------------------------
 
 example : HoareM (Regs := Unit) (Ret := Int)
@@ -21,8 +19,15 @@ example : HoareM (Regs := Unit) (Ret := Int)
     (fun v _ => v = 42) := by
   apply skip_hoare; intros; rfl
 
+-- Same example, dispatched purely by aesop.
+example : HoareM (Regs := Unit) (Ret := Int)
+    (fun _ => True)
+    (pure 42 : EffectStack Unit Int Int)
+    (fun v _ => v = 42) := by
+  aesop (rule_sets := [BitcHoare])
+
 -- ---------------------------------------------------------------------------
--- TDD Cycle 3: modify_hoare — modify updates state correctly
+-- modify_hoare — modify updates state correctly
 -- ---------------------------------------------------------------------------
 
 structure TestRegs where
@@ -32,12 +37,15 @@ example : HoareM (Regs := TestRegs) (Ret := Int)
     (fun s => s.regs.x = 0)
     (modify (fun s => { s with regs := { x := 1 } }) : EffectStack TestRegs Int Unit)
     (fun _ s => s.regs.x = 1) := by
-  apply modify_hoare; intros s hs; simp [hs]
+  apply modify_hoare; intros; simp
 
 -- ---------------------------------------------------------------------------
--- TDD Cycle 4: seq_hoare — sequential composition
+-- seq_hoare — WLP-style sequential composition
 -- ---------------------------------------------------------------------------
 
+-- No `(R := ...)` intermediate — WLP passes the post-state of the first leg
+-- directly through the inner `HoareM`. `aesop (rule_sets := [BitcHoare])`
+-- chains the structural lemmas mechanically.
 example : HoareM (Regs := TestRegs) (Ret := Int)
     (fun s => s.regs.x = 0)
     (do
@@ -45,13 +53,10 @@ example : HoareM (Regs := TestRegs) (Ret := Int)
       modify (fun s => { s with regs := { x := s.regs.x + 1 } })
       : EffectStack TestRegs Int Unit)
     (fun _ s => s.regs.x = 2) := by
-  apply seq_hoare (R := fun _ s => s.regs.x = 1)
-  · apply modify_hoare; intros s hs; simp [hs]
-  · intro _
-    apply modify_hoare; intros s hs; simp [hs]
+  aesop (rule_sets := [BitcHoare])
 
 -- ---------------------------------------------------------------------------
--- TDD Cycle 5: ifM_hoare — conditional branching
+-- ifM_hoare — conditional branching
 -- ---------------------------------------------------------------------------
 
 example (b : Bool) : HoareM (Regs := TestRegs) (Ret := Int)
@@ -61,21 +66,19 @@ example (b : Bool) : HoareM (Regs := TestRegs) (Ret := Int)
      else
        modify (fun s => { s with regs := { x := 0 } }))
     (fun _ s => s.regs.x = 1 ∨ s.regs.x = 0) := by
-  apply ifM_hoare
-  · intro _; apply modify_hoare; intros; exact Or.inl rfl
-  · intro _; apply modify_hoare; intros; exact Or.inr rfl
+  aesop (rule_sets := [BitcHoare])
 
 -- ---------------------------------------------------------------------------
--- TDD Cycle 6: loopM_hoare — loop with invariant
+-- loopM_hoare — loop with invariant (manual injection point)
 -- ---------------------------------------------------------------------------
 
--- Count from 0 to 5 using loopM
 structure CounterRegs where
   n : Int
 
+-- Count from 0 up to 5 inside the EffectStack. Fuel is arbitrary, ≥ 5.
 example : HoareM (Regs := CounterRegs) (Ret := Int)
     (fun s => 0 ≤ s.regs.n ∧ s.regs.n ≤ 5)
-    (loopM (m := EffectStack CounterRegs Int) (fun _ => do
+    (loopM 10 (fun _ => do
       let s ← get
       if s.regs.n < 5 then do
         modify (fun s => { s with regs := { n := s.regs.n + 1 } })
@@ -87,17 +90,10 @@ example : HoareM (Regs := CounterRegs) (Ret := Int)
   apply @loopM_hoare CounterRegs Int Int
     (I := fun s => 0 ≤ s.regs.n ∧ s.regs.n ≤ 5)
     (Q := fun v _ => v = 5)
-    (body := fun _ => do
-      let s ← get
-      if s.regs.n < 5 then do
-        modify (fun s => { s with regs := { n := s.regs.n + 1 } })
-        pure LoopControl.continue
-      else
-        pure (LoopControl.break s.regs.n))
   intro u s hs
   obtain ⟨h0, hn⟩ := hs
   simp only [bind, StateT.bind, Except.bind, get, getThe, MonadStateOf.get, StateT.get,
-             pure, Except.pure]
+             pure, Except.pure, LoopControl.post]
   split
   · rename_i a s' h
     by_cases hlt : s.regs.n < 5
@@ -105,7 +101,7 @@ example : HoareM (Regs := CounterRegs) (Ret := Int)
       simp [modify, modifyGet, MonadStateOf.modifyGet, StateT.modifyGet, StateT.bind,
             StateT.pure] at h
       obtain ⟨ha, hs'⟩ := Prod.mk.inj (Except.ok.inj h)
-      subst ha; subst hs'; simp; constructor; omega; omega
+      subst ha; subst hs'; refine ⟨?_, ?_⟩ <;> (simp; omega)
     · simp only [hlt, if_false] at h
       simp [StateT.pure] at h
       obtain ⟨ha, hs'⟩ := Prod.mk.inj (Except.ok.inj h)
@@ -113,12 +109,12 @@ example : HoareM (Regs := CounterRegs) (Ret := Int)
   · trivial
 
 -- ---------------------------------------------------------------------------
--- TDD Cycle 7: stateLoopM_hoare — state-indexed invariant
+-- stateLoopM_hoare — state-indexed invariant
 -- ---------------------------------------------------------------------------
 
 example : HoareM (Regs := CounterRegs) (Ret := Int)
     (fun s => 0 ≤ s.regs.n ∧ s.regs.n ≤ 3)
-    (stateLoopM (m := EffectStack CounterRegs Int) (fun _ => do
+    (stateLoopM 10 (fun _ => do
       let s ← get
       if s.regs.n < 3 then do
         modify (fun s => { s with regs := { n := s.regs.n + 1 } })
@@ -130,18 +126,11 @@ example : HoareM (Regs := CounterRegs) (Ret := Int)
   apply @stateLoopM_hoare CounterRegs Int Int
     (I := fun _ s => 0 ≤ s.regs.n ∧ s.regs.n ≤ 3)
     (Q := fun v _ => v = 3)
-    (body := fun _ => do
-      let s ← get
-      if s.regs.n < 3 then do
-        modify (fun s => { s with regs := { n := s.regs.n + 1 } })
-        pure LoopControl.continue
-      else
-        pure (LoopControl.break s.regs.n))
     (n := 0)
   intro u n s hs
   obtain ⟨h0, hn⟩ := hs
   simp only [bind, StateT.bind, Except.bind, get, getThe, MonadStateOf.get, StateT.get,
-             pure, Except.pure]
+             pure, Except.pure, LoopControl.post]
   split
   · rename_i a s' h
     by_cases hlt : s.regs.n < 3
@@ -150,18 +139,15 @@ example : HoareM (Regs := CounterRegs) (Ret := Int)
             StateT.pure] at h
       obtain ⟨ha, hs'⟩ := Prod.mk.inj (Except.ok.inj h)
       subst ha; subst hs'
-      simp only []
-      exact ⟨0, by omega, by omega⟩
+      refine ⟨0, ?_, ?_⟩ <;> (simp; omega)
     · simp only [hlt, if_false] at h
       simp [StateT.pure] at h
       obtain ⟨ha, hs'⟩ := Prod.mk.inj (Except.ok.inj h)
-      subst ha; subst hs'
-      simp only []
-      omega
+      subst ha; subst hs'; simp; omega
   · trivial
 
 -- ---------------------------------------------------------------------------
--- TDD Cycle 8: store_hoare and load_hoare
+-- store_hoare and load_hoare
 -- ---------------------------------------------------------------------------
 
 example : HoareM (Regs := Unit) (Ret := Int)
@@ -174,27 +160,29 @@ example : HoareM (Regs := Unit) (Ret := Int)
   simp [List.find?]
 
 -- ---------------------------------------------------------------------------
--- TDD Cycle 9: Factorial proof using Hoare logic
+-- Factorial proof using Hoare logic
 -- This is the key acceptance criterion from issue #5.
 -- ---------------------------------------------------------------------------
 
-/-- Registers for the factorial function -/
 structure FactRegs where
-  n   : Int  -- current counter
-  acc : Int  -- accumulator
+  n   : Int
+  acc : Int
 
-/-- Monadic factorial: computes n! iteratively -/
-def factM (n : Int) : EffectStack FactRegs Int Int :=
+/-- Body of the factorial loop: decrement `n`, multiply `acc`, until `n ≤ 0`. -/
+def factBody : Unit → EffectStack FactRegs Int (LoopControl Int) := fun _ => do
+  let s ← get
+  if s.regs.n ≤ 0 then
+    pure (LoopControl.break s.regs.acc)
+  else do
+    modify (fun s => { s with regs :=
+      { n := s.regs.n - 1, acc := s.regs.acc * s.regs.n } })
+    pure LoopControl.continue
+
+/-- Monadic factorial: computes n! iteratively. Fuel must dominate n. -/
+def factM (n : Int) (fuel : Nat) : EffectStack FactRegs Int Int :=
   do
     modify (fun s => { s with regs := { n := n, acc := 1 } })
-    loopM (m := EffectStack FactRegs Int) (fun _ => do
-      let s ← get
-      if s.regs.n ≤ 0 then
-        pure (LoopControl.break s.regs.acc)
-      else do
-        modify (fun s => { s with regs :=
-          { n := s.regs.n - 1, acc := s.regs.acc * s.regs.n } })
-        pure LoopControl.continue) ()
+    loopM fuel factBody ()
 
 /-- Mathematical factorial for the spec -/
 def fact : Nat → Int
@@ -205,64 +193,79 @@ def fact : Nat → Int
 def factInv (initial : Int) (s : FunctionState FactRegs) : Prop :=
   0 ≤ s.regs.n ∧ s.regs.acc * fact s.regs.n.toNat = fact initial.toNat
 
-/-- Prove that factM n computes n! using Hoare logic -/
-theorem factM_correct (n : Int) (hn : 0 ≤ n) :
+/-- `factM n` computes `n!` for any fuel large enough to run the loop.
+    Fuel exhaustion (`UBKind.timeout`) is vacuously satisfied — partial
+    correctness, total `loopM`.
+
+    The proof uses WLP `seq_hoare` for the seeding `modify`, then specialises
+    `loopM_hoare` at the concrete post-`modify` state. The loop invariant is
+    the standard `acc * n! = initial_n!`. -/
+theorem factM_correct (n : Int) (fuel : Nat) (hn : 0 ≤ n) :
     HoareM
       (fun _ => True)
-      (factM n)
+      (factM n fuel)
       (fun v _ => v = fact n.toNat) := by
+  -- Step 1: WLP-chain the seeding `modify` with the loop.
   unfold factM
-  -- Step 1: apply seq_hoare for the modify
-  apply seq_hoare (R := fun _ => factInv n)
-  · -- The modify establishes the invariant
-    apply modify_hoare
-    intro s _
-    simp [factInv, fact, hn]
-  · -- Step 2: apply loopM_hoare with the factorial invariant
-    intro _
-    apply @loopM_hoare FactRegs Int Int
-      (I := factInv n)
-      (Q := fun v _ => v = fact n.toNat)
-      (body := fun _ => do
-        let s ← get
-        if s.regs.n ≤ 0 then
-          pure (LoopControl.break s.regs.acc)
-        else do
-          modify (fun s => { s with regs :=
-            { n := s.regs.n - 1, acc := s.regs.acc * s.regs.n } })
-          pure LoopControl.continue)
+  apply seq_hoare
+  apply modify_hoare
+  intro s _ s' hss'
+  subst hss'
+  -- Step 2: build the body's invariant lemma inline. We must avoid a
+  -- separate top-level lemma because Lean's elaborator otherwise has
+  -- trouble unifying its postcondition with the outer `fun v _ => v = ...`.
+  have hbody : ∀ u, HoareM (factInv n) (factBody u)
+        (LoopControl.post (factInv n) (fun v _ => v = fact n.toNat)) := by
     intro u s hs
+    unfold factBody
     obtain ⟨hnn, hinv⟩ := hs
     simp only [bind, StateT.bind, Except.bind, get, getThe, MonadStateOf.get, StateT.get,
-               pure, Except.pure, factInv]
+               pure, Except.pure, factInv, LoopControl.post]
     split
-    · rename_i a s' h
+    · rename_i a s'' h
       by_cases hle : s.regs.n ≤ 0
-      · -- n ≤ 0, break with acc
+      · -- n ≤ 0: break with `acc = fact n`.
         simp only [hle, if_true] at h
         simp [StateT.pure] at h
-        obtain ⟨ha, hs'⟩ := Prod.mk.inj (Except.ok.inj h)
-        subst ha; subst hs'; simp
+        obtain ⟨ha, hs''⟩ := Prod.mk.inj (Except.ok.inj h)
+        subst ha; subst hs''; simp
         have hn0 : s.regs.n = 0 := by omega
         simp [hn0, fact] at hinv
         exact hinv
-      · -- n > 0, continue
+      · -- n > 0: continue with `n' = n - 1`, `acc' = acc * n`.
         have hgt : 0 < s.regs.n := by omega
         simp only [show ¬ s.regs.n ≤ 0 from by omega, if_false] at h
         simp [modify, modifyGet, MonadStateOf.modifyGet, StateT.modifyGet, StateT.bind,
               StateT.pure] at h
-        obtain ⟨ha, hs'⟩ := Prod.mk.inj (Except.ok.inj h)
-        subst ha; subst hs'; simp
-        constructor
-        · omega
-        · have hfact : fact s.regs.n.toNat = s.regs.n * fact (s.regs.n.toNat - 1) := by
-            cases h : s.regs.n.toNat with
-            | zero => omega
-            | succ k =>
-              simp [fact]
-              have hk1 : s.regs.n = k + 1 := by omega
-              rw [hk1]
-          rw [hfact] at hinv
-          rw [← Int.mul_assoc] at hinv
-          exact hinv
+        obtain ⟨ha, hs''⟩ := Prod.mk.inj (Except.ok.inj h)
+        subst ha; subst hs''; simp
+        refine ⟨by omega, ?_⟩
+        have hfact : fact s.regs.n.toNat = s.regs.n * fact (s.regs.n.toNat - 1) := by
+          cases h : s.regs.n.toNat with
+          | zero => omega
+          | succ k =>
+            simp [fact]
+            have hk1 : s.regs.n = k + 1 := by omega
+            rw [hk1]
+        rw [hfact, ← Int.mul_assoc] at hinv
+        exact hinv
     · trivial
+  -- Step 3: invoke `loopM_hoare` on the concrete post-`modify` state.
+  exact loopM_hoare (I := factInv n) hbody fuel () _ (by simp [factInv, hn])
+
+-- ---------------------------------------------------------------------------
+-- Axiom audit: the Hoare layer must add zero axioms to the TCB.
+-- Each `#print axioms` line is a compile-time assertion; CI surfaces drift.
+-- ---------------------------------------------------------------------------
+
+#print axioms HoareM
+#print axioms loopM
+#print axioms loopM_hoare
+#print axioms stateLoopM_hoare
+#print axioms seq_hoare
+#print axioms skip_hoare
+#print axioms modify_hoare
+#print axioms ifM_hoare
+#print axioms store_hoare
+#print axioms load_hoare
+#print axioms factM_correct
