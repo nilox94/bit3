@@ -33,10 +33,14 @@ jobs:
 
       - name: cargo build
         working-directory: bitc
+        env:
+          LLVM_SYS_181_PREFIX: /usr/lib/llvm-18
         run: cargo build
 
       - name: cargo test
         working-directory: bitc
+        env:
+          LLVM_SYS_181_PREFIX: /usr/lib/llvm-18
         run: cargo test
 
   bitlib-build:
@@ -72,6 +76,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Install LLVM 18
+        run: |
+          wget -qO- https://apt.llvm.org/llvm.sh | sudo bash -s -- 18
+          sudo apt-get install -y llvm-18 clang-18
+
       - name: Install Rust stable
         uses: dtolnay/rust-toolchain@stable
 
@@ -99,6 +108,8 @@ jobs:
 
       - name: Build bitc
         working-directory: bitc
+        env:
+          LLVM_SYS_181_PREFIX: /usr/lib/llvm-18
         run: cargo build
 
       - name: Run bitc (smoke test — prints hello)

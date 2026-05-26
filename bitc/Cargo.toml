@@ -4,3 +4,15 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+inkwell = { version = "0.9", features = ["llvm18-1"] }
+
+[dev-dependencies]
+tempfile = "3"
+
+[lib]
+name = "bitc"
+path = "src/lib.rs"
+
+[[bin]]
+name = "bitc"
+path = "src/main.rs"
