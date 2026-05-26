@@ -2,7 +2,7 @@
 bitc/target/
 
 # Lean 4 build artifacts
-bitlib/.lake/
+.lake/
 
 # OS / editor artifacts
 .DS_Store
