@@ -17,6 +17,10 @@ jobs:
         uses: KyleMayes/install-llvm-action@v2
         with:
           version: "18"
+          directory: ${{ runner.temp }}/llvm
+
+      - name: Satisfy linkage for LLVM binaries (Ubuntu)
+        run: sudo apt-get update && sudo apt-get install -y libtinfo5 zlib1g
 
       - name: Install Rust stable
         uses: dtolnay/rust-toolchain@stable
@@ -35,12 +39,14 @@ jobs:
         working-directory: bitc
         env:
           LLVM_SYS_181_PREFIX: ${{ env.LLVM_PATH }}
+          LD_LIBRARY_PATH: ${{ env.LLVM_PATH }}/lib:${{ env.LD_LIBRARY_PATH }}
         run: cargo build
 
       - name: cargo test
         working-directory: bitc
         env:
           LLVM_SYS_181_PREFIX: ${{ env.LLVM_PATH }}
+          LD_LIBRARY_PATH: ${{ env.LLVM_PATH }}/lib:${{ env.LD_LIBRARY_PATH }}
         run: cargo test
 
   bitlib-build:
@@ -80,6 +86,10 @@ jobs:
         uses: KyleMayes/install-llvm-action@v2
         with:
           version: "18"
+          directory: ${{ runner.temp }}/llvm
+
+      - name: Satisfy linkage for LLVM binaries (Ubuntu)
+        run: sudo apt-get update && sudo apt-get install -y libtinfo5 zlib1g
 
       - name: Install Rust stable
         uses: dtolnay/rust-toolchain@stable
@@ -110,6 +120,7 @@ jobs:
         working-directory: bitc
         env:
           LLVM_SYS_181_PREFIX: ${{ env.LLVM_PATH }}
+          LD_LIBRARY_PATH: ${{ env.LLVM_PATH }}/lib:${{ env.LD_LIBRARY_PATH }}
         run: cargo build
 
       - name: Run bitc (smoke test — prints hello)
