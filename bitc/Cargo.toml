@@ -4,9 +4,11 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+const_format = { version = "0.2.36", features = ["more_str_macros"] }
 inkwell = { version = "0.9", features = ["llvm18-1"] }
 
 [dev-dependencies]
+inkwell = { version = "0.9", features = ["llvm18-1"] }
 tempfile = "3"
 
 [lib]
