@@ -7,7 +7,8 @@
 
 import 'just/common.just'
 
-set shell := ["bash", "-eu", "-o", "pipefail", "-c"]
+# Without `-c`, lines run in one script so `source` / `export` persist (see just manual).
+set shell := ["bash", "-eu", "-o", "pipefail"]
 
 sh_paths := scripts + "/*.sh"
 
