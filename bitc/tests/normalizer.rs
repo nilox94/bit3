@@ -1,8 +1,8 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use bitc::NORMALIZE_PASS_PIPELINE;
 use bitc::normalizer::{NormalizerError, normalize_path};
+use bitc::{NORMALIZE_PASS_PIPELINE, PHASES};
 use inkwell::context::Context;
 use inkwell::memory_buffer::MemoryBuffer;
 use inkwell::module::Module;
@@ -167,7 +167,15 @@ fn tmp_then_rename_ll() {
 
 #[test]
 fn normalize_pass_pipeline_structure() {
-    let passes: Vec<&str> = NORMALIZE_PASS_PIPELINE.split(',').collect();
+    let passes: Vec<&str> = PHASES
+        .iter()
+        .flat_map(|phase| phase.passes.iter().map(|p| p.name))
+        .collect();
+    assert_eq!(
+        passes.join(","),
+        NORMALIZE_PASS_PIPELINE,
+        "PHASES flatten must match NORMALIZE_PASS_PIPELINE"
+    );
     assert!(passes.len() > 1, "pipeline should list multiple passes");
     assert_eq!(passes.last(), Some(&"verify"), "verify must be last");
     assert!(
@@ -175,7 +183,10 @@ fn normalize_pass_pipeline_structure() {
         "instcombine is deliberately excluded"
     );
 
-    let mem2reg = passes.iter().position(|&p| p == "mem2reg").expect("mem2reg");
+    let mem2reg = passes
+        .iter()
+        .position(|&p| p == "mem2reg")
+        .expect("mem2reg");
     let loop_simplify = passes
         .iter()
         .position(|&p| p == "loop-simplify")
@@ -185,7 +196,10 @@ fn normalize_pass_pipeline_structure() {
         "mem2reg must run before loop canonicalization"
     );
 
-    let indvars = passes.iter().position(|&p| p == "indvars").expect("indvars");
+    let indvars = passes
+        .iter()
+        .position(|&p| p == "indvars")
+        .expect("indvars");
     let lcssa = passes.iter().position(|&p| p == "lcssa").expect("lcssa");
     assert!(indvars < lcssa, "lcssa must follow indvars");
 }

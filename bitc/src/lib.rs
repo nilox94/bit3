@@ -3,4 +3,4 @@
 mod macros;
 pub mod normalizer;
 
-pub use normalizer::NORMALIZE_PASS_PIPELINE;
+pub use normalizer::{NORMALIZE_PASS_PIPELINE, PHASES, Pass, Phase};
