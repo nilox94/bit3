@@ -7,8 +7,7 @@
 
 import 'just/common.just'
 
-# Without `-c`, lines run in one script so `source` / `export` persist (see just manual).
-set shell := ["bash", "-eu", "-o", "pipefail"]
+set shell := ["bash", "-eu", "-o", "pipefail", "-c"]
 
 sh_paths := scripts + "/*.sh"
 
@@ -68,9 +67,7 @@ setup-rust:
 [group('env')]
 [working-directory('bitlib')]
 setup-lean *args:
-    '{{ scripts }}/install-elan.sh' {{ args }}
-    export PATH="${HOME}/.elan/bin:${PATH}"
-    lake update
+    '{{ scripts }}/install-elan.sh' {{ args }} && export PATH="${HOME}/.elan/bin:${PATH}" && lake update
 
 # Verify prerequisites and managed installs.
 [group('env')]
@@ -96,17 +93,12 @@ remove-llvm:
 # [*paths] Format shell scripts in-place (default: all just/scripts/*.sh).
 [group('sh')]
 sh-fmt *paths=sh_paths:
-    # shellcheck source=shell-tools-env.sh disable=SC1091
-    source '{{ scripts }}/shell-tools-env.sh'
-    shfmt -w {{ paths }}
+    source '{{ scripts }}/shell-tools-env.sh' && shfmt -w {{ paths }}
 
 # [*paths] Read-only: shfmt -d and shellcheck (default: all just/scripts/*.sh).
 [group('sh')]
 sh-lint *paths=sh_paths:
-    # shellcheck source=shell-tools-env.sh disable=SC1091
-    source '{{ scripts }}/shell-tools-env.sh'
-    shfmt -d {{ paths }}
-    shellcheck -x {{ paths }}
+    source '{{ scripts }}/shell-tools-env.sh' && shfmt -d {{ paths }} && shellcheck -x {{ paths }}
 
 # --- bitc ---
 
