@@ -7,128 +7,95 @@ on:
     branches: ["master"]
 
 jobs:
-  bitc-build:
-    name: bitc — build & test
+  changes:
+    name: detect changes
     runs-on: ubuntu-22.04
+    outputs:
+      bitc: ${{ steps.filter.outputs.bitc }}
+      bitlib: ${{ steps.filter.outputs.bitlib }}
+      sh: ${{ steps.filter.outputs.sh }}
+      sh_files: ${{ steps.sh-files.outputs.sh_files }}
     steps:
       - uses: actions/checkout@v4
-
-      - name: Install LLVM and Clang
-        uses: KyleMayes/install-llvm-action@v2
+      - uses: dorny/paths-filter@v3
+        id: filter
         with:
-          version: "18"
-          directory: ${{ runner.temp }}/llvm
+          filters: |
+            bitc:
+              - 'bitc/**'
+            bitlib:
+              - 'bitlib/**'
+            sh:
+              - 'just/scripts/**'
+              - 'just/common.just'
+              - 'justfile'
+      - uses: dorny/paths-filter@v3
+        id: sh-files
+        with:
+          list-files: shell
+          filters: |
+            sh:
+              - 'just/scripts/**'
 
+  sh-lint:
+    name: sh — lint
+    runs-on: ubuntu-22.04
+    needs: changes
+    if: |
+      (github.event_name == 'push' && github.ref == 'refs/heads/master') ||
+      needs.changes.outputs.sh == 'true'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: extractions/setup-just@v3
+      - run: just setup-sh
+      - name: sh-lint (changed files)
+        if: needs.changes.outputs.sh_files != ''
+        run: just sh-lint ${{ needs.changes.outputs.sh_files }}
+      - name: sh-lint (all scripts)
+        if: needs.changes.outputs.sh_files == ''
+        run: just sh-lint
+
+  bitc:
+    name: bitc — lint, build, test
+    runs-on: ubuntu-22.04
+    needs: changes
+    if: |
+      (github.event_name == 'push' && github.ref == 'refs/heads/master') ||
+      needs.changes.outputs.bitc == 'true'
+    env:
+      RUSTFLAGS: -D warnings
+    steps:
+      - uses: actions/checkout@v4
+      - uses: extractions/setup-just@v3
+      - run: just setup-rust
+      - run: just setup-llvm --prefix "${{ runner.temp }}/llvm" --github-env
       - name: Satisfy linkage for LLVM binaries (Ubuntu)
         run: sudo apt-get update && sudo apt-get install -y libtinfo5 zlib1g
-
-      - name: Install Rust stable
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: Cache Cargo registry
-        uses: actions/cache@v4
+      - uses: Swatinem/rust-cache@v2
         with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            bitc/target
-          key: ${{ runner.os }}-cargo-${{ hashFiles('bitc/Cargo.lock') }}
-          restore-keys: ${{ runner.os }}-cargo-
+          workspaces: bitc
+          shared-key: bitc
+          cache-all-crates: true
+      - run: just bitc-lint
+      - run: just bitc-build
+      - run: just bitc-test
 
-      - name: cargo build
-        working-directory: bitc
-        env:
-          LLVM_SYS_181_PREFIX: ${{ env.LLVM_PATH }}
-          LD_LIBRARY_PATH: ${{ env.LLVM_PATH }}/lib:${{ env.LD_LIBRARY_PATH }}
-        run: cargo build
-
-      - name: cargo test
-        working-directory: bitc
-        env:
-          LLVM_SYS_181_PREFIX: ${{ env.LLVM_PATH }}
-          LD_LIBRARY_PATH: ${{ env.LLVM_PATH }}/lib:${{ env.LD_LIBRARY_PATH }}
-        run: cargo test
-
-  bitlib-build:
-    name: bitlib — build & test
+  bitlib:
+    name: bitlib — lint, build, test
     runs-on: ubuntu-22.04
+    needs: changes
+    if: |
+      (github.event_name == 'push' && github.ref == 'refs/heads/master') ||
+      needs.changes.outputs.bitlib == 'true'
     steps:
       - uses: actions/checkout@v4
-
-      - name: Install elan (Lean 4 version manager)
-        run: |
-          curl https://raw.githubusercontent.com/leanprover/elan/master/elan-init.sh -sSf | sh -s -- -y
-          echo "$HOME/.elan/bin" >> "$GITHUB_PATH"
-
-      - name: Cache Lake build
-        uses: actions/cache@v4
+      - uses: extractions/setup-just@v3
+      - run: just setup-lean --github-path
+      - uses: actions/cache@v4
         with:
           path: bitlib/.lake/build
           key: ${{ runner.os }}-lake-${{ hashFiles('bitlib/lakefile.toml', 'bitlib/lean-toolchain') }}
           restore-keys: ${{ runner.os }}-lake-
-
-      - name: lake build
-        working-directory: bitlib
-        run: lake build
-
-      - name: lake test
-        working-directory: bitlib
-        run: lake test
-
-  integration:
-    name: integration — bitc output compiles in Lean
-    runs-on: ubuntu-22.04
-    needs: [bitc-build, bitlib-build]
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Install LLVM and Clang
-        uses: KyleMayes/install-llvm-action@v2
-        with:
-          version: "18"
-          directory: ${{ runner.temp }}/llvm
-
-      - name: Satisfy linkage for LLVM binaries (Ubuntu)
-        run: sudo apt-get update && sudo apt-get install -y libtinfo5 zlib1g
-
-      - name: Install Rust stable
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: Install elan (Lean 4 version manager)
-        run: |
-          curl https://raw.githubusercontent.com/leanprover/elan/master/elan-init.sh -sSf | sh -s -- -y
-          echo "$HOME/.elan/bin" >> "$GITHUB_PATH"
-
-      - name: Cache Cargo registry
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            bitc/target
-          key: ${{ runner.os }}-cargo-${{ hashFiles('bitc/Cargo.lock') }}
-          restore-keys: ${{ runner.os }}-cargo-
-
-      - name: Cache Lake build
-        uses: actions/cache@v4
-        with:
-          path: bitlib/.lake/build
-          key: ${{ runner.os }}-lake-${{ hashFiles('bitlib/lakefile.toml', 'bitlib/lean-toolchain') }}
-          restore-keys: ${{ runner.os }}-lake-
-
-      - name: Build bitc
-        working-directory: bitc
-        env:
-          LLVM_SYS_181_PREFIX: ${{ env.LLVM_PATH }}
-          LD_LIBRARY_PATH: ${{ env.LLVM_PATH }}/lib:${{ env.LD_LIBRARY_PATH }}
-        run: cargo build
-
-      - name: Run bitc (smoke test — prints hello)
-        working-directory: bitc
-        run: |
-          output=$(./target/debug/bitc)
-          [ "$output" = "hello" ] || (echo "Unexpected output: $output" && exit 1)
-
-      - name: Build bitlib (integration gate)
-        working-directory: bitlib
-        run: lake build
+      - run: just bitlib-lint
+      - run: just bitlib-build
+      - run: just bitlib-test
