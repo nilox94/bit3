@@ -28,7 +28,9 @@ abbrev ReturnOrUB (Ret : Type) (α : Type) := Except (Ret ⊕ UBKind) α
 
 /-- FunctionState models the local state of a translated function. -/
 structure FunctionState (Registers : Type) where
+  /-- Register file for the current function. -/
   regs : Registers
+  /-- Residual memory map (address → value) after mem2reg. -/
   memory : List (Nat × Int) -- Residual memory map (Finmap Nat Int)
 
 /-- The Effect Stack type. -/
