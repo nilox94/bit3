@@ -68,6 +68,7 @@ setup-rust:
 [working-directory('bitlib')]
 setup-lean *args:
     '{{ scripts }}/install-elan.sh' {{ args }}
+    export PATH="${HOME}/.elan/bin:${PATH}"
     lake update
 
 # Verify prerequisites and managed installs.

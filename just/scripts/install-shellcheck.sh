@@ -92,7 +92,7 @@ main() {
 	curl -fsSL -o "${tmp}/${asset}" "$url"
 	mkdir -p "${tmp}/extract"
 	tar -xJf "${tmp}/${asset}" -C "${tmp}/extract"
-	binary="$(find "${tmp}/extract" -name shellcheck -type f -perm +111 | head -1)"
+	binary="$(find "${tmp}/extract" -type f -name shellcheck | head -1)"
 	[[ -n "$binary" ]] || die "shellcheck binary not found in archive"
 
 	rm -rf "$prefix"
