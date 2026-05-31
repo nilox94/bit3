@@ -9,8 +9,6 @@ import 'just/common.just'
 
 set shell := ["bash", "-eu", "-o", "pipefail", "-c"]
 
-sh_paths := scripts + "/*.sh"
-
 [default]
 [private]
 list:
@@ -93,12 +91,12 @@ remove-llvm:
 
 # [*paths] Format shell scripts in-place (default: all just/scripts/*.sh).
 [group('sh')]
-sh-fmt *paths=sh_paths:
+sh-fmt *paths=(scripts / "*.sh"):
     source '{{ scripts }}/shell-tools-env.sh' && shfmt -w {{ paths }}
 
 # [*paths] Read-only: shfmt -d and shellcheck (default: all just/scripts/*.sh).
 [group('sh')]
-sh-lint *paths=sh_paths:
+sh-lint *paths=(scripts / "*.sh"):
     source '{{ scripts }}/shell-tools-env.sh' && shfmt -d {{ paths }} && shellcheck -x {{ paths }}
 
 # --- bitc ---
