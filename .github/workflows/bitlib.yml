@@ -19,11 +19,15 @@ jobs:
     steps:
       - uses: actions/checkout@v6
       - uses: extractions/setup-just@v4
-      - run: just setup-lean --github-path
       - uses: actions/cache@v5
         with:
-          path: bitlib/.lake/build
-          key: ${{ runner.os }}-lake-${{ hashFiles('bitlib/lakefile.toml', 'bitlib/lake-manifest.json', 'bitlib/lean-toolchain') }}
+          path: |
+            ~/.elan
+            bitlib/.lake
+          key: ${{ runner.os }}-lean-${{ hashFiles('bitlib/lean-toolchain', 'bitlib/lake-manifest.json', 'bitlib/lakefile.toml') }}
+          restore-keys: |
+            ${{ runner.os }}-lean-${{ hashFiles('bitlib/lean-toolchain', 'bitlib/lake-manifest.json') }}-
+      - run: just setup-lean --github-path
       - run: just bitlib-build
       - run: just bitlib-lint -- --no-build
       - run: just bitlib-test
