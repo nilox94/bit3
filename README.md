@@ -13,8 +13,6 @@ just build
 
 `just setup` installs LLVM, Lean (elan if needed), and Lake dependencies. The `bitc` Rust toolchain is pulled in automatically on the first `cargo` invocation during `just build`.
 
-On Ubuntu/Debian you may also need `libtinfo5` and `zlib1g` for LLVM linkage (see [`.github/workflows/ci.yml`](./.github/workflows/ci.yml)).
-
 ## Components
 
 | Component | Path |
