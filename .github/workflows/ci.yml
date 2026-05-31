@@ -100,5 +100,4 @@ jobs:
           path: bitlib/.lake/build
           key: ${{ runner.os }}-lake-${{ hashFiles('bitlib/lakefile.toml', 'bitlib/lake-manifest.json', 'bitlib/lean-toolchain') }}
       - run: just bitlib-lint
-      - run: just bitlib-build
       - run: just bitlib-test

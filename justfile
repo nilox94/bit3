@@ -150,9 +150,9 @@ bitlib-build *args: (bitlib-lake "build" args)
 [group('bitlib')]
 bitlib-test *args: (bitlib-lake "test" args)
 
-# [*args] lake lint.
+# [*args] lake build then lint (lint needs Bitlib.olean on the search path).
 [group('bitlib')]
-bitlib-lint *args: (bitlib-lake "lint" args)
+bitlib-lint *args: (bitlib-lake "build") (bitlib-lake "lint" args)
 
 # lake clean.
 [group('bitlib')]
