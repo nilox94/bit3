@@ -18,6 +18,7 @@ jobs:
     name: bitc — lint
     runs-on: ubuntu-22.04
     steps:
+      - uses: actions/checkout@v6
       - uses: ./.github/actions/bitc-setup
       - run: just bitc-lint
         shell: bash
@@ -26,6 +27,7 @@ jobs:
     name: bitc — check
     runs-on: ubuntu-22.04
     steps:
+      - uses: actions/checkout@v6
       - uses: ./.github/actions/bitc-setup
       - run: just bitc-check
         shell: bash
@@ -35,6 +37,7 @@ jobs:
     runs-on: ubuntu-22.04
     needs: [lint, check]
     steps:
+      - uses: actions/checkout@v6
       - uses: ./.github/actions/bitc-setup
       - run: just bitc-test
         shell: bash

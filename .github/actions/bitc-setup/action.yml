@@ -1,10 +1,9 @@
 name: Setup bitc CI
-description: Checkout, toolchains, cached LLVM (runner.temp/llvm), rust-cache, and RUSTFLAGS for bitc jobs
+description: Toolchains, cached LLVM (runner.temp/llvm), rust-cache, and RUSTFLAGS for bitc jobs (run after actions/checkout)
 
 runs:
   using: composite
   steps:
-    - uses: actions/checkout@v6
     - name: Configure CI environment
       shell: bash
       run: |
