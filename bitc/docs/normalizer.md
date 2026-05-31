@@ -15,7 +15,13 @@ Keep **`-O0`** semantics; allow chosen LLVM passes to run:
 
 **Authoritative:** [`src/normalizer/pipeline.rs`](../src/normalizer/pipeline.rs) — pass names, phase grouping, and order.
 
-Per-pass one-liners live as comments in `pipeline.rs`.
+Current `opt -passes=` string:
+
+```bash
+just bitc-print-pipeline
+```
+
+Per-pass one-liners live as `=>` blurbs in the `pipeline!` block in `pipeline.rs`.
 Do not duplicate pass lists or phase order here.
 
 ## Excluded passes

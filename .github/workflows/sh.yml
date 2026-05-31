@@ -1,0 +1,39 @@
+name: sh
+
+on:
+  push:
+    branches: ["master"]
+  pull_request:
+    branches: ["master"]
+    paths:
+      - "just/scripts/**"
+      - "just/common.just"
+      - "justfile"
+      - ".github/workflows/sh.yml"
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  lint:
+    name: sh — lint
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dorny/paths-filter@v4
+        if: github.event_name == 'pull_request'
+        id: sh-files
+        with:
+          list-files: shell
+          filters: |
+            sh:
+              - 'just/scripts/**/*.sh'
+      - uses: extractions/setup-just@v4
+      - run: just setup-sh
+      - name: sh-lint (changed files)
+        if: github.event_name == 'pull_request' && steps.sh-files.outputs.sh_files != ''
+        run: just sh-lint ${{ steps.sh-files.outputs.sh_files }}
+      - name: sh-lint (all scripts)
+        if: github.event_name != 'pull_request' || steps.sh-files.outputs.sh_files == ''
+        run: just sh-lint

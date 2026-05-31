@@ -1,0 +1,58 @@
+name: bitc
+
+on:
+  push:
+    branches: ["master"]
+  pull_request:
+    branches: ["master"]
+    paths:
+      - "bitc/**"
+      - ".github/workflows/bitc.yml"
+      - "just/scripts/**"
+
+permissions:
+  contents: read
+
+jobs:
+  ci:
+    name: bitc
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Configure CI environment
+        run: |
+          echo "LLVM_PREFIX=${{ runner.temp }}/llvm" >>"${GITHUB_ENV}"
+          echo "RUSTFLAGS=-D warnings" >>"${GITHUB_ENV}"
+
+      - uses: extractions/setup-just@v4
+
+      - name: Setup Rust
+        run: just setup-rust
+
+      - name: Satisfy linkage for LLVM binaries (Ubuntu)
+        run: sudo apt-get update && sudo apt-get install -y libtinfo5 zlib1g
+
+      - uses: actions/cache@v5
+        id: llvm-cache
+        with:
+          path: ${{ runner.temp }}/llvm
+          key: bitc-llvm-${{ hashFiles('just/scripts/llvm-version') }}
+
+      - name: Setup LLVM
+        run: just setup-llvm --prefix "${LLVM_PREFIX}" --github-env
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: bitc
+          shared-key: bitc
+          cache-all-crates: true
+
+      - name: Lint
+        run: just bitc-lint
+
+      - name: Check
+        run: just bitc-check
+
+      - name: Test
+        run: just bitc-test

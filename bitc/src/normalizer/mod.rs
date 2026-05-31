@@ -3,8 +3,10 @@
 //! Pass list and order: [`pipeline`] (`NORMALIZE_PASS_PIPELINE`).
 
 mod pipeline;
+mod pipeline_spec;
 
-pub use pipeline::NORMALIZE_PASS_PIPELINE;
+pub use pipeline::{NORMALIZE_PASS_PIPELINE, PHASES};
+pub use pipeline_spec::{Pass, Phase};
 
 use std::ffi::OsStr;
 use std::fmt;

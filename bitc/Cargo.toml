@@ -18,3 +18,7 @@ path = "src/lib.rs"
 [[bin]]
 name = "bitc"
 path = "src/main.rs"
+
+[[bin]]
+name = "bitc-pipeline"
+path = "src/bin/bitc-pipeline.rs"
