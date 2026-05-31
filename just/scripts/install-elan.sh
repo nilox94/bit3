@@ -16,10 +16,20 @@ die() {
 	exit 1
 }
 
+_script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck disable=SC1091
+source "${_script_dir}/lib.sh"
+
 publish_elan_to_github_path() {
 	[[ -n "${GITHUB_PATH:-}" ]] ||
 		die "--github-path requires GITHUB_PATH (set by GitHub Actions)"
 	echo "${ELAN_BIN}" >>"${GITHUB_PATH}"
+}
+
+verify_elan() {
+	command -v lake >/dev/null 2>&1 || die "lake not on PATH after elan install"
+	command -v lean >/dev/null 2>&1 || die "lean not on PATH after elan install"
+	run_or_die "lean --version failed" lean --version >/dev/null
 }
 
 main() {
@@ -42,7 +52,8 @@ main() {
 	done
 
 	if command -v lake >/dev/null 2>&1 && command -v lean >/dev/null 2>&1; then
-		log "already installed ($(lean --version | head -1))"
+		verify_elan
+		log "already installed"
 		[[ "$github_path" -eq 1 ]] && publish_elan_to_github_path
 		exit 0
 	fi
@@ -54,11 +65,8 @@ main() {
 		export PATH="${ELAN_BIN}:${PATH}"
 	fi
 
-	if ! command -v lake >/dev/null 2>&1; then
-		die "elan install finished but lake not found on PATH"
-	fi
-
-	log "installed $(lean --version | head -1)"
+	verify_elan
+	log "installed"
 	[[ "$github_path" -eq 1 ]] && publish_elan_to_github_path
 }
 

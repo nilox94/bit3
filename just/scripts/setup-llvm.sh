@@ -228,6 +228,16 @@ prefix_installed() {
 		"${prefix}/bin/llvm-config" --version 2>/dev/null | grep -q "^${version}"
 }
 
+# Fail if llvm-config cannot run (e.g. missing libtinfo.so.5 on Ubuntu before apt install).
+verify_prefix() {
+	local prefix="$1" version="$2"
+	local installed_ver
+	installed_ver="$("${prefix}/bin/llvm-config" --version)" ||
+		die "llvm-config failed at ${prefix} (on Ubuntu try: apt install libtinfo5 zlib1g)"
+	[[ "$installed_ver" == "${version}"* ]] ||
+		die "llvm-config reports ${installed_ver}, expected ${version}"
+}
+
 emit_env() {
 	local prefix="$1" version="$2" os="$3" github_env="$4"
 	local llvm_sys_var
@@ -300,6 +310,7 @@ main() {
 	arch="$(detect_arch)"
 
 	if prefix_installed "$prefix" "$version"; then
+		verify_prefix "$prefix" "$version"
 		log "already installed at ${prefix}"
 		emit_env "$prefix" "$version" "$os" "$github_env"
 		exit 0
@@ -333,7 +344,10 @@ main() {
 	mv "$extracted_prefix" "$prefix"
 	rm -rf "$tmp"
 
-	log "installed $("${prefix}/bin/llvm-config" --version) at ${prefix}"
+	verify_prefix "$prefix" "$version"
+	local installed_ver
+	installed_ver="$("${prefix}/bin/llvm-config" --version)"
+	log "installed ${installed_ver} at ${prefix}"
 	emit_env "$prefix" "$version" "$os" "$github_env"
 }
 

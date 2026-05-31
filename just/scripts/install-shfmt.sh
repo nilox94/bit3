@@ -15,6 +15,9 @@ die() {
 	exit 1
 }
 
+# shellcheck disable=SC1091
+source "${script_dir}/lib.sh"
+
 default_version() {
 	tr -d '[:space:]' <"${script_dir}/shfmt-version"
 }
@@ -46,6 +49,14 @@ asset_name() {
 download_url() {
 	local version="$1" asset="$2"
 	echo "https://github.com/mvdan/sh/releases/download/v${version}/${asset}"
+}
+
+verify_shfmt() {
+	local prefix="$1" version="$2" ver
+	capture_or_die ver "shfmt failed at ${prefix}" "${prefix}/bin/shfmt" --version
+	ver="${ver#v}"
+	[[ "$ver" == "${version}" ]] ||
+		die "shfmt reports ${ver}, expected ${version} at ${prefix}"
 }
 
 main() {
@@ -86,12 +97,9 @@ main() {
 	url="$(download_url "$version" "$asset")"
 
 	if [[ -x "${prefix}/bin/shfmt" ]]; then
-		ver="$("${prefix}/bin/shfmt" --version)"
-		ver="${ver#v}"
-		if [[ "$ver" == "${version}" ]]; then
-			log "already installed at ${prefix}"
-			exit 0
-		fi
+		verify_shfmt "$prefix" "$version"
+		log "already installed at ${prefix}"
+		exit 0
 	fi
 
 	log "downloading ${asset}"
@@ -99,7 +107,8 @@ main() {
 	mkdir -p "${prefix}/bin"
 	curl -fsSL -o "${prefix}/bin/shfmt" "$url"
 	chmod +x "${prefix}/bin/shfmt"
-	log "installed $("${prefix}/bin/shfmt" --version) at ${prefix}"
+	verify_shfmt "$prefix" "$version"
+	log "installed at ${prefix}"
 }
 
 main "$@"

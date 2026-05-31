@@ -15,6 +15,9 @@ die() {
 	exit 1
 }
 
+# shellcheck disable=SC1091
+source "${script_dir}/lib.sh"
+
 default_version() {
 	tr -d '[:space:]' <"${script_dir}/shellcheck-version"
 }
@@ -43,6 +46,14 @@ asset_name() {
 download_url() {
 	local version="$1" asset="$2"
 	echo "https://github.com/koalaman/shellcheck/releases/download/v${version}/${asset}"
+}
+
+verify_shellcheck() {
+	local prefix="$1" version="$2" line
+	capture_or_die line "shellcheck failed at ${prefix}" \
+		"${prefix}/bin/shellcheck" --version
+	[[ "$line" == *"version: ${version}"* ]] ||
+		die "shellcheck reports unexpected version at ${prefix}: ${line}"
 }
 
 main() {
@@ -82,7 +93,8 @@ main() {
 	asset="$(asset_name "$version" "$os" "$arch")"
 	url="$(download_url "$version" "$asset")"
 
-	if [[ -x "${prefix}/bin/shellcheck" ]] && "$prefix/bin/shellcheck" --version | grep -q "version: ${version}"; then
+	if [[ -x "${prefix}/bin/shellcheck" ]]; then
+		verify_shellcheck "$prefix" "$version"
 		log "already installed at ${prefix}"
 		exit 0
 	fi
@@ -99,7 +111,8 @@ main() {
 	mkdir -p "${prefix}/bin"
 	install -m 755 "$binary" "${prefix}/bin/shellcheck"
 	rm -rf "$tmp"
-	log "installed $("${prefix}/bin/shellcheck" --version | head -1) at ${prefix}"
+	verify_shellcheck "$prefix" "$version"
+	log "installed at ${prefix}"
 }
 
 main "$@"
