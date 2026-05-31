@@ -1,0 +1,29 @@
+name: bitlib
+
+on:
+  push:
+    branches: ["master"]
+  pull_request:
+    branches: ["master"]
+    paths:
+      - "bitlib/**"
+      - ".github/workflows/bitlib.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  ci:
+    name: bitlib — build, lint, test
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v6
+      - uses: extractions/setup-just@v4
+      - run: just setup-lean --github-path
+      - uses: actions/cache@v5
+        with:
+          path: bitlib/.lake/build
+          key: ${{ runner.os }}-lake-${{ hashFiles('bitlib/lakefile.toml', 'bitlib/lake-manifest.json', 'bitlib/lean-toolchain') }}
+      - run: just bitlib-build
+      - run: just bitlib-lint -- --no-build
+      - run: just bitlib-test
