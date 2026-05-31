@@ -1,0 +1,40 @@
+name: bitc
+
+on:
+  push:
+    branches: ["master"]
+  pull_request:
+    branches: ["master"]
+    paths:
+      - "bitc/**"
+      - ".github/workflows/bitc.yml"
+      - ".github/actions/bitc-setup/**"
+
+permissions:
+  contents: read
+
+jobs:
+  lint:
+    name: bitc — lint
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: ./.github/actions/bitc-setup
+      - run: just bitc-lint
+        shell: bash
+
+  check:
+    name: bitc — check
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: ./.github/actions/bitc-setup
+      - run: just bitc-check
+        shell: bash
+
+  test:
+    name: bitc — test
+    runs-on: ubuntu-22.04
+    needs: [lint, check]
+    steps:
+      - uses: ./.github/actions/bitc-setup
+      - run: just bitc-test
+        shell: bash
