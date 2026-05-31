@@ -39,7 +39,7 @@ jobs:
           list-files: shell
           filters: |
             sh:
-              - 'just/scripts/**'
+              - 'just/scripts/**/*.sh'
 
   sh-lint:
     name: sh — lint
@@ -98,8 +98,7 @@ jobs:
       - uses: actions/cache@v4
         with:
           path: bitlib/.lake/build
-          key: ${{ runner.os }}-lake-${{ hashFiles('bitlib/lakefile.toml', 'bitlib/lean-toolchain') }}
-          restore-keys: ${{ runner.os }}-lake-
+          key: ${{ runner.os }}-lake-${{ hashFiles('bitlib/lakefile.toml', 'bitlib/lake-manifest.json', 'bitlib/lean-toolchain') }}
       - run: just bitlib-lint
       - run: just bitlib-build
       - run: just bitlib-test
