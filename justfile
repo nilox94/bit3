@@ -25,6 +25,7 @@ fmt: bitc-fmt sh-fmt
 lint:
     just bitc-lint
     just sh-lint
+    just bitlib-build
     just bitlib-lint
 
 # Build all project artifacts.
@@ -114,6 +115,10 @@ bitc-clippy +args='': (bitc-cargo "clippy" args)
 [group('bitc')]
 bitc-lint: (bitc-cargo "fmt" "--all" "--check") bitc-clippy
 
+# [*args] cargo check (typecheck; faster than build).
+[group('bitc')]
+bitc-check +args='': (bitc-cargo "check" args)
+
 # [*args] cargo build.
 [group('bitc')]
 bitc-build +args='': (bitc-cargo "build" args)
@@ -150,9 +155,9 @@ bitlib-build *args: (bitlib-lake "build" args)
 [group('bitlib')]
 bitlib-test *args: (bitlib-lake "test" args)
 
-# [*args] lake build then lint (lint needs Bitlib.olean on the search path).
+# [*args] lake lint (run bitlib-build first; CI passes -- --no-build).
 [group('bitlib')]
-bitlib-lint *args: (bitlib-lake "build") (bitlib-lake "lint" args)
+bitlib-lint *args: (bitlib-lake "lint" args)
 
 # lake clean.
 [group('bitlib')]
