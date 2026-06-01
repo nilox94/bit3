@@ -22,9 +22,8 @@ fmt: bitc-fmt sh-fmt
 # Read-only quality gates (fmt check + linters; no cargo check).
 lint:
     just bitc-lint
-    just sh-lint
-    just bitlib-build
     just bitlib-lint
+    just sh-lint
 
 # Build all project artifacts.
 build: bitc-build bitlib-build
